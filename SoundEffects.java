@@ -1,159 +1,353 @@
 /**
- * SoundEffects.java — Stub/dummy sound effect hooks for Tetris.
+ * SoundEffects.java — Sound effect hooks for Tetris.
  *
- * HOW TO IMPLEMENT:
- *   All methods in this class are intentionally empty stubs.
- *   A programmer wishing to add real audio should:
- *     1. Add audio libraries (e.g. javax.sound.sampled, or a third-party lib).
- *     2. Load audio resources in the static initialiser or constructor.
- *     3. Replace each method body with the appropriate playback call.
- *   No other file needs to be modified — TetrisGame, GameBoard and
- *   UserInterface already call these methods at the correct moments.
+ * ═══════════════════════════════════════════════════════════════════
+ * DESIGN PATTERNS & PRINCIPLES APPLIED
+ * ═══════════════════════════════════════════════════════════════════
  *
- * All methods are static for easy call-site ergonomics (SoundEffects.onDrop()).
+ * 1. SINGLETON PATTERN (Creational)
+ * ──────────────────────────────────
+ * WHERE : SoundEffects class itself
+ * WHY : The original class was a static utility — every method was
+ * static, and the class could never be instantiated (private
+ * constructor). This is a common anti-pattern because:
+ * - Static classes cannot implement interfaces
+ * - Static classes cannot be swapped for a mock/silent version
+ * - Static state is shared globally and hard to test
+ * Singleton gives the same "one global instance" guarantee
+ * while allowing the class to implement an interface, be
+ * subclassed (e.g. SilentSoundEffects for testing), and be
+ * injected as a dependency.
+ * HOW : Private constructor + static getInstance() method.
+ * The single instance is created lazily on first access.
+ * CATEGORY: Creational — controls how and when the one object is made.
+ *
+ * 2. FACADE PATTERN (Structural)
+ * ──────────────────────────────
+ * WHERE : SoundEffects as a whole, wrapping SoundManager
+ * WHY : SoundManager has a low-level API:
+ * playMusic(path), stopMusic(), pauseMusic(), resumeMusic(),
+ * playSound(path), playComboSound(path, count)
+ * Callers (GameBoard, TetrisFrame, UserInterface) should not
+ * need to know file paths, combo counts, or whether to call
+ * pauseMusic vs stopMusic. SoundEffects is the Facade —
+ * it presents a clean, game-event-oriented API:
+ * onMove(), onHardDrop(), onTetris(), onGameOver() …
+ * Changing an audio file path or switching audio libraries
+ * only requires editing SoundEffects, not every call site.
+ * CATEGORY: Structural — describes how objects are composed/connected.
+ *
+ * 3. SINGLE RESPONSIBILITY PRINCIPLE (SOLID — S)
+ * ───────────────────────────────────────────────
+ * WHERE : SoundEffects vs SoundManager
+ * WHY : SoundEffects is only responsible for MAPPING game events
+ * to sound calls. It does not load files, manage clips, or
+ * control audio hardware — that is SoundManager's job.
+ * The two classes have separate, well-defined responsibilities.
+ *
+ * 4. OPEN / CLOSED PRINCIPLE (SOLID — O)
+ * ──────────────────────────────────────
+ * WHERE : ISoundEffects interface
+ * WHY : By extracting ISoundEffects, new sound behaviour (e.g. a
+ * "SilentMode" for testing, or "SurroundSoundEffects") can be
+ * added by implementing the interface — without modifying
+ * SoundEffects or any call site.
+ *
+ * 5. DEPENDENCY INVERSION PRINCIPLE (SOLID — D)
+ * ──────────────────────────────────────────────
+ * WHERE : ISoundEffects interface
+ * WHY : Callers depend on the ISoundEffects abstraction, not the
+ * concrete SoundEffects class. High-level modules (GameBoard,
+ * TetrisFrame) should not depend on low-level audio details.
+ *
+ * 6. INTERFACE SEGREGATION PRINCIPLE (SOLID — I)
+ * ─────────────────────────────────────────────
+ * WHERE : ISoundEffects split into logical method groups
+ * WHY : All methods are grouped by concern (music, movement, lines,
+ * milestones, menu, game state). A caller that only needs menu
+ * sounds is not forced to depend on gameplay sound methods.
+ * The interface is kept minimal and cohesive.
+ *
+ * ═══════════════════════════════════════════════════════════════════
+ * BACKWARD COMPATIBILITY
+ * ═══════════════════════════════════════════════════════════════════
+ * All existing call sites use SoundEffects.onMove(), SoundEffects.onDrop()
+ * etc. (static calls). To avoid editing every call site while still
+ * applying the Singleton pattern, static forwarding methods are kept
+ * below. They delegate to getInstance() internally.
+ * This preserves the existing API while introducing proper OO structure.
+ * ═══════════════════════════════════════════════════════════════════
  */
-public class SoundEffects {
+public class SoundEffects implements ISoundEffects {
 
-    // ── Private constructor — static utility class, not instantiated ──────────
-    private SoundEffects() {}
+    // ── Audio file path constants ─────────────────────────────────────────────
+    // SOLID/DRY: all paths in one place. Changing a file name = one edit here.
+    // Previously these were scattered as inline string literals across methods.
+    private static final String MUSIC_PATH = "OOP-project/Sounds/tetrismusic.wav";
+    private static final String SND_DROP = "OOP-project/Sounds/soundsdrop.wav";
+    private static final String SND_PIECE_LOCK = "Sounds/soundspiecelock.wav";
+    private static final String SND_ROTATE = "Sounds/soundsrotate.wav";
+    private static final String SND_MOVE = "Sounds/soundslateralmove.wav";
+    private static final String SND_CLEAR = "OOP-project/Sounds/soundsclear.wav";
+    private static final String SND_TETRIS = "OOP-project/Sounds/soundstetris.wav";
+    private static final String SND_LEVEL_UP = "Sounds/soundslevelup.wav";
+    private static final String SND_SELECT = "Sounds/soundsselect.wav";
+    private static final String SND_GAME_OVER = "Sounds/soundsgameover.wav";
+    private static final String SND_HIGH_SCORE = "Sounds/soundshighscore.wav";
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // Background Music
-    // ─────────────────────────────────────────────────────────────────────────
+    // ═════════════════════════════════════════════════════════════════════════
+    // SINGLETON — single shared instance
+    // ─────────────────────────────────
+    // Only one SoundEffects object exists for the lifetime of the program.
+    // Lazy initialisation: the instance is created on first call to getInstance().
+    //
+    // WHY NOT STATIC METHODS ONLY (the original design):
+    // Static classes cannot implement ISoundEffects, cannot be mocked in
+    // tests, and cannot be swapped for a different implementation (e.g.
+    // SilentSoundEffects). Singleton gives the same guarantee with more
+    // flexibility.
+    // ═════════════════════════════════════════════════════════════════════════
+
+    /** The single instance — null until first access (lazy initialisation). */
+    private static SoundEffects instance = null;
 
     /**
-     * Start the background music loop.
-     * Called once when the gameplay screen is shown.
-     * Should loop continuously until stopBackgroundMusic() is called.
+     * Private constructor — enforces Singleton.
+     * No code outside this class can call new SoundEffects().
      */
-    public static void startBackgroundMusic() {
-        SoundManager.playMusic("OOP-project/Sounds/tetrismusic.wav");
+    private SoundEffects() {
     }
 
     /**
-     * Stop the background music.
-     * Called when the game ends, is paused, or the player returns to a menu.
+     * Returns the single shared SoundEffects instance.
+     * Creates it on the first call (lazy initialisation).
+     *
+     * PATTERN — Singleton (Creational):
+     * Guarantees exactly one instance exists.
+     * All static forwarding methods below delegate here.
      */
-    public static void stopBackgroundMusic() {
+    public static SoundEffects getInstance() {
+        if (instance == null) {
+            instance = new SoundEffects(); // created once, reused forever
+        }
+        return instance;
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════
+    // FACADE — game-event API (implements ISoundEffects)
+    // ───────────────────────────────────────────────────
+    // Each method maps a high-level game event to one or more low-level
+    // SoundManager calls. Call sites never see file paths or combo counts.
+    // ═════════════════════════════════════════════════════════════════════════
+
+    // ── Background Music ─────────────────────────────────────────────────────
+
+    /**
+     * Starts the looping background music.
+     * FACADE: hides the file path from the caller.
+     */
+    @Override
+    public void startMusic() {
+        SoundManager.playMusic(MUSIC_PATH);
+    }
+
+    /**
+     * Stops the background music entirely.
+     * Called on game over or returning to a menu.
+     */
+    @Override
+    public void stopMusic() {
         SoundManager.stopMusic();
     }
 
     /**
-     * Pause/resume the background music (e.g. on P key).
+     * Pauses or resumes background music.
+     * FACADE: hides the pauseMusic/resumeMusic split from the caller.
+     *
      * @param paused true to pause, false to resume
      */
-    public static void setBackgroundMusicPaused(boolean paused) {
-        if (paused) {
+    @Override
+    public void setMusicPaused(boolean paused) {
+        if (paused)
             SoundManager.pauseMusic();
-        } else {
+        else
             SoundManager.resumeMusic();
-        }
     }
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // Piece Movement & Placement
-    // ─────────────────────────────────────────────────────────────────────────
+    // ── Piece Movement & Placement ───────────────────────────────────────────
+
+    /** Soft-drop sound (player holds down key). */
+    @Override
+    public void onSoftDrop() {
+        SoundManager.playSound(SND_DROP);
+    }
 
     /**
-     * Played when a piece is soft-dropped (player holds the down key).
+     * Hard-drop sound (player presses Space).
+     * FACADE: playComboSound detail hidden — caller just says "hard drop".
      */
+    @Override
+    public void onHardDrop() {
+        SoundManager.playComboSound(SND_DROP, 4);
+    }
+
+    /** Piece lock sound — played when a piece settles onto the stack. */
+    @Override
+    public void onPieceLock() {
+        SoundManager.playSound(SND_PIECE_LOCK);
+    }
+
+    /** Rotation sound. */
+    @Override
+    public void onRotate() {
+        SoundManager.playSound(SND_ROTATE);
+    }
+
+    /** Lateral movement sound (left / right). */
+    @Override
+    public void onMove() {
+        SoundManager.playSound(SND_MOVE);
+    }
+
+    // ── Line Clears ──────────────────────────────────────────────────────────
+
+    /**
+     * Line-clear sound for 1, 2, or 3 lines.
+     * FACADE: combo count is an internal audio detail — caller just passes
+     * how many lines were cleared; SoundEffects decides what that means.
+     *
+     * @param lineCount number of lines cleared simultaneously (1–3)
+     */
+    @Override
+    public void onLineClear(int lineCount) {
+        SoundManager.playComboSound(SND_CLEAR, lineCount);
+    }
+
+    /**
+     * Tetris sound — four lines cleared simultaneously.
+     * Kept separate from onLineClear() so the caller expresses intent clearly.
+     */
+    @Override
+    public void onTetris() {
+        SoundManager.playComboSound(SND_TETRIS, 4);
+    }
+
+    // ── Level & Score Milestones ─────────────────────────────────────────────
+
+    /** Level-up sound — played when the player advances a level. */
+    @Override
+    public void onLevelUp() {
+        SoundManager.playSound(SND_LEVEL_UP);
+    }
+
+    // ── Menu & UI Interactions ───────────────────────────────────────────────
+
+    /**
+     * Menu button click sound.
+     * onMenuClick and onMenuBack use the same audio file —
+     * keeping them as separate methods preserves the semantic distinction
+     * (they could diverge in future without changing call sites).
+     */
+    @Override
+    public void onMenuClick() {
+        SoundManager.playSound(SND_SELECT);
+    }
+
+    /** Back-navigation sound. */
+    @Override
+    public void onMenuBack() {
+        SoundManager.playSound(SND_SELECT);
+    }
+
+    // ── Game State Events ────────────────────────────────────────────────────
+
+    /** Game-over sound — stack reached the top. */
+    @Override
+    public void onGameOver() {
+        SoundManager.playSound(SND_GAME_OVER);
+    }
+
+    /** High-score sound — player beat or matched their best score. */
+    @Override
+    public void onHighScore() {
+        SoundManager.playSound(SND_HIGH_SCORE);
+    }
+
+    // ═════════════════════════════════════════════════════════════════════════
+    // STATIC FORWARDING METHODS — backward-compatible call-site API
+    // ──────────────────────────────────────────────────────────────
+    // All existing callers use SoundEffects.onMove(), SoundEffects.onDrop()
+    // etc. as static calls. These forwarders preserve that API exactly,
+    // while internally routing through the Singleton instance.
+    //
+    // BENEFIT: zero changes required in GameBoard, TetrisFrame, or
+    // UserInterface — they continue calling SoundEffects.onXxx() as before.
+    // The Singleton pattern is fully applied under the hood.
+    // ═════════════════════════════════════════════════════════════════════════
+
+    // ── Background Music forwarders ───────────────────────────────────────────
+    public static void startBackgroundMusic() {
+        getInstance().startMusic();
+    }
+
+    public static void stopBackgroundMusic() {
+        getInstance().stopMusic();
+    }
+
+    public static void setBackgroundMusicPaused(boolean p) {
+        getInstance().setMusicPaused(p);
+    }
+
+    // ── Movement forwarders ───────────────────────────────────────────────────
     public static void onSoftDrop() {
-        SoundManager.playSound("Sounds/soundsdrop.wav");
+        getInstance().onSoftDrop();
     }
 
-    /**
-     * Played when a piece is hard-dropped (player presses Space).
-     * Typically a louder, sharper impact sound than a soft drop.
-     */
     public static void onHardDrop() {
-        SoundManager.playComboSound("OOP-project/Sounds/soundsdrop.wav", 4);
+        getInstance().onHardDrop();
     }
 
-    /**
-     * Played when a piece naturally locks into position (touches the stack).
-     */
     public static void onPieceLock() {
-        SoundManager.playSound("Sounds/soundspiecelock.wav");
+        getInstance().onPieceLock();
     }
 
-    /**
-     * Played when a piece is rotated.
-     */
     public static void onRotate() {
-        SoundManager.playSound("Sounds/soundsrotate.wav");
+        getInstance().onRotate();
     }
 
-    /**
-     * Played when a piece is moved left or right.
-     */
     public static void onMove() {
-        SoundManager.playSound("Sounds/soundslateralmove.wav");
+        getInstance().onMove();
     }
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // Line Clears
-    // ─────────────────────────────────────────────────────────────────────────
-
-    /**
-     * Played when one, two, or three lines are cleared at once.
-     * @param lineCount the number of lines cleared (1, 2, or 3)
-     */
+    // ── Line clear forwarders ─────────────────────────────────────────────────
     public static void onLineClear(int lineCount) {
-        SoundManager.playComboSound("OOP-project/Sounds/soundsclear.wav", lineCount);
+        getInstance().onLineClear(lineCount);
     }
 
-    /**
-     * Played when exactly four lines are cleared simultaneously (Tetris!).
-     * Should be distinct and more dramatic than onLineClear().
-     */
     public static void onTetris() {
-        SoundManager.playComboSound("OOP-project/Sounds/soundstetris.wav", 4);
+        getInstance().onTetris();
     }
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // Level & Score Milestones
-    // ─────────────────────────────────────────────────────────────────────────
-
-    /**
-     * Played when the player advances to a new level.
-     */
+    // ── Milestone forwarders ──────────────────────────────────────────────────
     public static void onLevelUp() {
-        SoundManager.playSound("Sounds/soundslevelup.wav");
+        getInstance().onLevelUp();
     }
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // Menu & UI Interactions
-    // ─────────────────────────────────────────────────────────────────────────
-
-    /**
-     * Played when any menu button is clicked.
-     */
+    // ── Menu forwarders ───────────────────────────────────────────────────────
     public static void onMenuClick() {
-        SoundManager.playSound("Sounds/soundsselect.wav");
+        getInstance().onMenuClick();
     }
 
-    /**
-     * Played when the player navigates back from a screen.
-     */
     public static void onMenuBack() {
-        SoundManager.playSound("Sounds/soundsselect.wav");
+        getInstance().onMenuBack();
     }
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // Game State Events
-    // ─────────────────────────────────────────────────────────────────────────
-
-    /**
-     * Played when the game ends (stack reaches the top).
-     */
+    // ── Game state forwarders ─────────────────────────────────────────────────
     public static void onGameOver() {
-        SoundManager.playSound("Sounds/soundsgameover.wav");
+        getInstance().onGameOver();
     }
 
-    /**
-     * Played when the player achieves or beats a high score.
-     */
     public static void onHighScore() {
-        SoundManager.playSound("Sounds/soundshighscore.wav");
+        getInstance().onHighScore();
     }
 }
