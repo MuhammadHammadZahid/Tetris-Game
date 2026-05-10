@@ -224,8 +224,7 @@ public class SoundManager {
      */
     public void playSoundImpl(String filePath) {
         try {
-            // Original code prepended "OOP-project/" here — preserved exactly.
-            File soundFile = new File("OOP-project/" + filePath);
+            File soundFile = new File(filePath);
             if (soundFile.exists()) {
                 AudioInputStream audioInput = AudioSystem.getAudioInputStream(soundFile);
                 Clip clip = AudioSystem.getClip();

@@ -81,13 +81,13 @@
 public class SoundEffects {
 
     // ── Audio file path constants ─────────────────────────────────────────────
-    private static final String MUSIC_PATH    = "OOP-project/Sounds/tetrismusic.wav";
-    private static final String SND_DROP      = "OOP-project/Sounds/soundsdrop.wav";
+    private static final String MUSIC_PATH    = "Sounds/tetrismusic.wav";
+    private static final String SND_DROP      = "Sounds/soundsdrop.wav";
     private static final String SND_PIECE_LOCK = "Sounds/soundspiecelock.wav";
     private static final String SND_ROTATE    = "Sounds/soundsrotate.wav";
     private static final String SND_MOVE      = "Sounds/soundslateralmove.wav";
-    private static final String SND_CLEAR     = "OOP-project/Sounds/soundsclear.wav";
-    private static final String SND_TETRIS    = "OOP-project/Sounds/soundstetris.wav";
+    private static final String SND_CLEAR     = "Sounds/soundsclear.wav";
+    private static final String SND_TETRIS    = "Sounds/soundstetris.wav";
     private static final String SND_LEVEL_UP  = "Sounds/soundslevelup.wav";
     private static final String SND_SELECT    = "Sounds/soundsselect.wav";
     private static final String SND_GAME_OVER = "Sounds/soundsgameover.wav";
