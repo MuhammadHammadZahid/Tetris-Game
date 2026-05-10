@@ -207,6 +207,25 @@ public class GameModes {
             return false;
         }
 
+        // ── OCP — getSidePanelStats() ─────────────────────────────────────────
+        /**
+         * Returns mode-specific label/value pairs to display in the side panel.
+         *
+         * OCP: GameBoard.drawSidePanel() iterates these generically — it never
+         * needs to be modified when a new mode with unique stats is added.
+         * Each GameMode subclass that needs extra stats simply overrides this
+         * method; subclasses with no extras (Standard, Zen) inherit the default.
+         *
+         * DEFAULT: empty — no extra stats shown.
+         *
+         * @param lines   total lines cleared so far
+         * @param elapsed milliseconds since game start
+         * @return array of { label, value } string pairs, e.g. { {"TIME","1:45"} }
+         */
+        public String[][] getSidePanelStats(int lines, long elapsed) {
+            return new String[0][];
+        }
+
         // ── TEMPLATE METHOD (Behavioral) — onStart() ─────────────────────────
         /**
          * Called when the game starts. Captures start time and initial level.
@@ -310,6 +329,8 @@ public class GameModes {
                     { "TIME", formatTime(elapsedMs) } // formatTime() inherited from base
             };
         }
+
+        // Inherits default getSidePanelStats() — no extra stats for Standard mode.
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -359,6 +380,18 @@ public class GameModes {
                     { "SCORE", String.valueOf(finalScore) }
             };
         }
+
+        // ── OCP — getSidePanelStats() override ───────────────────────────────
+        /**
+         * Shows lines remaining until the 40-line target in the side panel.
+         * OCP: GameBoard.drawSidePanel() never needed modification to support
+         * this — it simply iterates whatever this method returns.
+         */
+        @Override
+        public String[][] getSidePanelStats(int lines, long elapsed) {
+            int remaining = Math.max(0, TARGET_LINES - lines);
+            return new String[][] { { "LEFT", String.valueOf(remaining) } };
+        }
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -400,7 +433,7 @@ public class GameModes {
 
         /**
          * Returns remaining countdown time in ms.
-         * Used by GameBoard.drawSidePanel() for the live countdown display.
+         * Used by getSidePanelStats() for the live countdown display.
          */
         public long getRemainingMs(long elapsedMs) {
             return Math.max(0, DURATION_MS - elapsedMs);
@@ -420,6 +453,17 @@ public class GameModes {
                     { "LINES", String.valueOf(finalLines) },
                     { "TIME", formatTime(elapsedMs) }
             };
+        }
+
+        // ── OCP — getSidePanelStats() override ───────────────────────────────
+        /**
+         * Shows the live countdown timer in the side panel.
+         * OCP: GameBoard.drawSidePanel() never needed modification to support
+         * this — it simply iterates whatever this method returns.
+         */
+        @Override
+        public String[][] getSidePanelStats(int lines, long elapsed) {
+            return new String[][] { { "TIME", formatTime(getRemainingMs(elapsed)) } };
         }
     }
 
@@ -494,5 +538,7 @@ public class GameModes {
                     { "LINES", String.valueOf(finalLines) }
             };
         }
+
+        // Inherits default getSidePanelStats() — no extra stats for Zen mode.
     }
 }

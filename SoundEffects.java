@@ -78,7 +78,7 @@
  * This preserves the existing API while introducing proper OO structure.
  * ═══════════════════════════════════════════════════════════════════
  */
-public class SoundEffects implements ISoundEffects {
+public class SoundEffects {
 
     // ── Audio file path constants ─────────────────────────────────────────────
     // SOLID/DRY: all paths in one place. Changing a file name = one edit here.
@@ -133,9 +133,9 @@ public class SoundEffects implements ISoundEffects {
         return instance;
     }
 
-    // ═════════════════════════════════════════════════════════════════════════
-    // FACADE — game-event API (implements ISoundEffects)
-    // ───────────────────────────────────────────────────
+    // ════════════════════════════════════════════════════════════════════════
+    // FACADE — game-event API
+    // ───────────────────────────────────────────────
     // Each method maps a high-level game event to one or more low-level
     // SoundManager calls. Call sites never see file paths or combo counts.
     // ═════════════════════════════════════════════════════════════════════════
@@ -146,8 +146,7 @@ public class SoundEffects implements ISoundEffects {
      * Starts the looping background music.
      * FACADE: hides the file path from the caller.
      */
-    @Override
-    public void startMusic() {
+    private void startMusic() {
         SoundManager.playMusic(MUSIC_PATH);
     }
 
@@ -155,8 +154,7 @@ public class SoundEffects implements ISoundEffects {
      * Stops the background music entirely.
      * Called on game over or returning to a menu.
      */
-    @Override
-    public void stopMusic() {
+    private void stopMusic() {
         SoundManager.stopMusic();
     }
 
@@ -166,8 +164,7 @@ public class SoundEffects implements ISoundEffects {
      *
      * @param paused true to pause, false to resume
      */
-    @Override
-    public void setMusicPaused(boolean paused) {
+    private void setMusicPaused(boolean paused) {
         if (paused)
             SoundManager.pauseMusic();
         else
@@ -177,8 +174,7 @@ public class SoundEffects implements ISoundEffects {
     // ── Piece Movement & Placement ───────────────────────────────────────────
 
     /** Soft-drop sound (player holds down key). */
-    @Override
-    public void onSoftDrop() {
+    private void implOnSoftDrop() {
         SoundManager.playSound(SND_DROP);
     }
 
@@ -186,26 +182,22 @@ public class SoundEffects implements ISoundEffects {
      * Hard-drop sound (player presses Space).
      * FACADE: playComboSound detail hidden — caller just says "hard drop".
      */
-    @Override
-    public void onHardDrop() {
+    private void implOnHardDrop() {
         SoundManager.playComboSound(SND_DROP, 4);
     }
 
     /** Piece lock sound — played when a piece settles onto the stack. */
-    @Override
-    public void onPieceLock() {
+    private void implOnPieceLock() {
         SoundManager.playSound(SND_PIECE_LOCK);
     }
 
     /** Rotation sound. */
-    @Override
-    public void onRotate() {
+    private void implOnRotate() {
         SoundManager.playSound(SND_ROTATE);
     }
 
     /** Lateral movement sound (left / right). */
-    @Override
-    public void onMove() {
+    private void implOnMove() {
         SoundManager.playSound(SND_MOVE);
     }
 
@@ -218,8 +210,7 @@ public class SoundEffects implements ISoundEffects {
      *
      * @param lineCount number of lines cleared simultaneously (1–3)
      */
-    @Override
-    public void onLineClear(int lineCount) {
+    private void implOnLineClear(int lineCount) {
         SoundManager.playComboSound(SND_CLEAR, lineCount);
     }
 
@@ -227,16 +218,14 @@ public class SoundEffects implements ISoundEffects {
      * Tetris sound — four lines cleared simultaneously.
      * Kept separate from onLineClear() so the caller expresses intent clearly.
      */
-    @Override
-    public void onTetris() {
+    private void implOnTetris() {
         SoundManager.playComboSound(SND_TETRIS, 4);
     }
 
     // ── Level & Score Milestones ─────────────────────────────────────────────
 
     /** Level-up sound — played when the player advances a level. */
-    @Override
-    public void onLevelUp() {
+    private void implOnLevelUp() {
         SoundManager.playSound(SND_LEVEL_UP);
     }
 
@@ -248,28 +237,24 @@ public class SoundEffects implements ISoundEffects {
      * keeping them as separate methods preserves the semantic distinction
      * (they could diverge in future without changing call sites).
      */
-    @Override
-    public void onMenuClick() {
+    private void implOnMenuClick() {
         SoundManager.playSound(SND_SELECT);
     }
 
     /** Back-navigation sound. */
-    @Override
-    public void onMenuBack() {
+    private void implOnMenuBack() {
         SoundManager.playSound(SND_SELECT);
     }
 
     // ── Game State Events ────────────────────────────────────────────────────
 
     /** Game-over sound — stack reached the top. */
-    @Override
-    public void onGameOver() {
+    private void implOnGameOver() {
         SoundManager.playSound(SND_GAME_OVER);
     }
 
     /** High-score sound — player beat or matched their best score. */
-    @Override
-    public void onHighScore() {
+    private void implOnHighScore() {
         SoundManager.playSound(SND_HIGH_SCORE);
     }
 

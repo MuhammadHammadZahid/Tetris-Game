@@ -14,79 +14,85 @@ import java.util.*;
  * ──────────────────────────────────────
  * WHERE : create(String type) method
  * WHY : GameBoard never calls new IPiece() or new TPiece() directly.
- * It calls TetrominoFactory.createRandom() — it only knows
- * about the Tetromino abstraction, never the concrete subclass.
- * The factory centralises all "which class do I instantiate?"
- * decisions in one place.
- * Adding a new piece = one new subclass + one new case in
- * create(). Nothing else changes. (OCP)
+ *       It calls TetrominoFactory.createRandom() — it only knows
+ *       about the Tetromino abstraction, never the concrete subclass.
+ *       The factory centralises all "which class do I instantiate?"
+ *       decisions in one place.
+ *       Adding a new piece = one new subclass + one new case in
+ *       create(). Nothing else changes. (OCP)
  * CATEGORY: Creational — factory decides which object to instantiate.
  *
  * 2. SINGLETON PATTERN (Creational)
  * ──────────────────────────────────
  * WHERE : The bag state (bag list, bagIndex, random) — now instance
- * fields on a Singleton rather than raw static fields.
+ *         fields on a Singleton rather than raw static fields.
  * WHY : The original used static mutable fields as implicit global
- * state. Static mutable state is hard to reset between games,
- * hard to test, and can cause subtle bugs if multiple game
- * instances existed. Singleton wraps this state in one
- * controlled object with a clear lifecycle.
+ *       state. Static mutable state is hard to reset between games,
+ *       hard to test, and can cause subtle bugs if multiple game
+ *       instances existed. Singleton wraps this state in one
+ *       controlled object with a clear lifecycle.
  * CATEGORY: Creational — one managed instance of the bag randomiser.
  *
  * 3. PROTOTYPE PATTERN (Creational)
  * ──────────────────────────────────
  * WHERE : Tetromino.clone() — used by createClone() helper
  * WHY : The ghost-piece feature needs a copy of the current piece.
- * createClone(Tetromino) delegates to the piece's own clone()
- * method (defined in Tetromino.java). The factory provides
- * a convenient static entry point: TetrominoFactory.createClone(t).
+ *       createClone(Tetromino) delegates to the piece's own clone()
+ *       method (defined in Tetromino.java). The factory provides
+ *       a convenient static entry point: TetrominoFactory.createClone(t).
  * CATEGORY: Creational — cloning an existing instance.
  *
  * 4. TEMPLATE METHOD PATTERN (Behavioral)
  * ──────────────────────────────────────
  * WHERE : Every concrete piece class (IPiece, OPiece, …)
  * WHY : Each subclass only overrides the two hooks defined in
- * Tetromino: defineRotations() and defineColor(). The
- * construction sequence (Template Method) lives entirely in
- * the Tetromino base class — no piece subclass has its own
- * constructor.
+ *       Tetromino: defineRotations() and defineColor(). The
+ *       construction sequence (Template Method) lives entirely in
+ *       the Tetromino base class — no piece subclass has its own
+ *       constructor.
  * CATEGORY: Behavioral — base class owns the algorithm skeleton.
  *
  * 5. OPEN / CLOSED PRINCIPLE (SOLID — O)
  * ──────────────────────────────────────
  * WHERE : create() switch + ALL_TYPES array
  * WHY : To add an 8th piece (e.g. a custom "U" piece):
- * 1. Add a new inner class UPiece extends Tetromino
- * 2. Add U_PIECE constant
- * 3. Add one case in create()
- * 4. Add U_PIECE to ALL_TYPES
- * Zero changes to GameBoard, Tetromino, or any other file.
+ *       1. Add a new inner class UPiece extends Tetromino
+ *       2. Add U_PIECE constant
+ *       3. Add one case in create()
+ *       4. Add U_PIECE to ALL_TYPES
+ *       Zero changes to GameBoard, Tetromino, or any other file.
  *
  * 6. SINGLE RESPONSIBILITY PRINCIPLE (SOLID — S)
  * ───────────────────────────────────────────────
  * WHERE : TetrominoFactory vs each piece subclass
  * WHY : TetrominoFactory is responsible for piece creation and
- * bag randomisation only. Each piece subclass (IPiece etc.)
- * is responsible for its own shape data and colour only.
- * No class mixes these two concerns.
+ *       bag randomisation only. Each piece subclass (IPiece etc.)
+ *       is responsible for its own shape data and colour only.
+ *       No class mixes these two concerns.
  *
  * 7. LISKOV SUBSTITUTION PRINCIPLE (SOLID — L)
  * ─────────────────────────────────────────────
  * WHERE : All 7 concrete piece classes
  * WHY : Every piece subclass can substitute for a Tetromino
- * reference without breaking GameBoard. rotateClockwise(),
- * getShape(), getColor(), clone() all behave correctly
- * regardless of which concrete type is used.
+ *       reference without breaking GameBoard. rotateClockwise(),
+ *       getShape(), getColor(), clone() all behave correctly
+ *       regardless of which concrete type is used.
  *
  * 8. DEPENDENCY INVERSION PRINCIPLE (SOLID — D)
  * ──────────────────────────────────────────────
  * WHERE : create() return type + createRandom() return type
  * WHY : Both methods return Tetromino (abstraction), never a
- * concrete subclass type. Callers depend on the abstraction.
+ *       concrete subclass type. Callers depend on the abstraction.
  *
  * ═══════════════════════════════════════════════════════════════════
  */
-public class TetrominoFactory implements Cloneable {
+
+// BUG FIX 1 — removed "implements Cloneable"
+// TetrominoFactory is not a piece and is never cloned. Cloneable belongs
+// on Tetromino (the class whose instances are cloned for ghost pieces), not
+// on the factory that creates them. Implementing it here was misleading and
+// would expose a public clone() path on the factory with no valid use case.
+public class TetrominoFactory {
 
     // ═════════════════════════════════════════════════════════════════════════
     // SINGLETON — one managed factory instance owns the bag state
@@ -98,18 +104,33 @@ public class TetrominoFactory implements Cloneable {
     // - The bag can be reset cleanly between games via resetBag()
     // ═════════════════════════════════════════════════════════════════════════
 
-    /** The single managed instance. */
-    private static TetrominoFactory instance = null;
+    // BUG FIX 2 — volatile keyword added to instance field.
+    // The original lazy-init (if (instance == null) { instance = new ... })
+    // is a data race: two threads could both see null simultaneously and each
+    // create their own factory, breaking the Singleton guarantee and causing
+    // each to hold a different bag state. volatile ensures that the write to
+    // instance is visible to all threads before any thread can read it as
+    // non-null, making the double-checked locking pattern below correct.
+    private static volatile TetrominoFactory instance = null;
 
     /**
      * Returns the single TetrominoFactory instance (lazy Singleton).
-     * Creates the instance on first call.
+     * Thread-safe via double-checked locking with a volatile field.
      *
      * PATTERN — Singleton (Creational).
      */
     public static TetrominoFactory getInstance() {
+        // First check (no lock) — avoids synchronisation overhead on every
+        // call once the instance is already initialised.
         if (instance == null) {
-            instance = new TetrominoFactory();
+            synchronized (TetrominoFactory.class) {
+                // Second check (inside lock) — guards against two threads
+                // both passing the first null check before either acquires
+                // the lock.
+                if (instance == null) {
+                    instance = new TetrominoFactory();
+                }
+            }
         }
         return instance;
     }
@@ -152,7 +173,7 @@ public class TetrominoFactory implements Cloneable {
     //
     // PATTERN : Factory Method (Creational)
     // PRINCIPLE: OCP — new piece = new subclass + one new case here.
-    // DIP — returns Tetromino abstraction, not concrete type.
+    //            DIP — returns Tetromino abstraction, not concrete type.
     // ═════════════════════════════════════════════════════════════════════════
 
     /**
@@ -186,22 +207,32 @@ public class TetrominoFactory implements Cloneable {
     }
 
     // ═════════════════════════════════════════════════════════════════════════
-    // 7-BAG RANDOMISER — createRandom()
-    // ──────────────────────────────────
+    // 7-BAG RANDOMISER — nextRandom()
+    // ─────────────────────────────────
     // Tetris guideline: every set of 7 pieces contains exactly one of each
     // type, shuffled randomly. This prevents long droughts of any one piece.
     //
     // SRP: bag logic lives here, not in GameBoard. GameBoard just calls
-    // createRandom() and receives a piece — it knows nothing about bags.
+    // createRandom() (static forwarder below) and receives a piece — it
+    // knows nothing about bags.
+    //
+    // NOTE: the instance method is named nextRandom() to avoid a duplicate
+    // method error with the static forwarder createRandom(). Java does not
+    // allow a static and an instance method with the same signature in the
+    // same class. The static forwarder keeps the public API unchanged;
+    // callers continue to use TetrominoFactory.createRandom() everywhere.
     // ═════════════════════════════════════════════════════════════════════════
 
     /**
      * Returns the next piece from the 7-bag randomiser.
      * Automatically refills and reshuffles the bag when exhausted.
      *
+     * Named nextRandom() (not createRandom()) to avoid a duplicate-method
+     * compile error with the static forwarder of the same name below.
+     *
      * @return a fresh Tetromino drawn from the current bag
      */
-    public Tetromino createRandom() {
+    public Tetromino nextRandom() {
         if (bagIndex >= bag.size()) {
             refillBag(); // reshuffle when the current bag is exhausted
         }
@@ -210,8 +241,14 @@ public class TetrominoFactory implements Cloneable {
 
     /**
      * Resets the bag to a fresh shuffled set of all 7 piece types.
-     * Called automatically by createRandom() when the bag runs out.
-     * Can also be called explicitly to reset state between games.
+     * Called explicitly to reset state between games.
+     *
+     * BUG FIX 3 — resetBag() and refillBag() were redundant wrappers of
+     * each other with no behavioural difference, creating a confusing
+     * public/private split. resetBag() is the public-facing reset API;
+     * refillBag() is the private auto-refill used by createRandom().
+     * Both now call the same shared body via refillBag(), but their
+     * roles are clearly separated by visibility and documentation.
      */
     public void resetBag() {
         refillBag();
@@ -219,13 +256,14 @@ public class TetrominoFactory implements Cloneable {
 
     /**
      * Internal bag refill — clears, repopulates, and shuffles.
-     * Private: callers use resetBag() for intentional resets.
+     * Called automatically by createRandom() when exhausted,
+     * and by resetBag() for intentional resets between games.
      */
     private void refillBag() {
         bag.clear();
         bag.addAll(Arrays.asList(ALL_TYPES)); // all 7 types
-        Collections.shuffle(bag, random); // true random shuffle
-        bagIndex = 0; // reset the read head
+        Collections.shuffle(bag, random);     // true random shuffle
+        bagIndex = 0;                          // reset the read head
     }
 
     // ═════════════════════════════════════════════════════════════════════════
@@ -249,7 +287,7 @@ public class TetrominoFactory implements Cloneable {
      * or subtype knowledge is needed here.
      *
      * Example usage in GameBoard:
-     * Tetromino ghost = TetrominoFactory.createClone(currentPiece);
+     *   Tetromino ghost = TetrominoFactory.createClone(currentPiece);
      *
      * @param source the Tetromino to copy
      * @return a new independent Tetromino with the same type and rotation
@@ -269,7 +307,6 @@ public class TetrominoFactory implements Cloneable {
 
     /**
      * Static forwarder — preserves existing call sites.
-     * 
      * @see #createPiece(String)
      */
     public static Tetromino create(String type) {
@@ -277,12 +314,14 @@ public class TetrominoFactory implements Cloneable {
     }
 
     /**
-     * Static forwarder — preserves existing call sites.
-     * 
-     * @see #createRandom()
+     * Static forwarder — preserves existing call sites in GameBoard.
+     * Delegates to the instance method nextRandom() (renamed to avoid
+     * the duplicate-method compile error a same-named static+instance
+     * pair would cause).
+     * @see #nextRandom()
      */
     public static Tetromino createRandom() {
-        return getInstance().createRandom();
+        return getInstance().nextRandom();
     }
 
     // ═════════════════════════════════════════════════════════════════════════
@@ -316,19 +355,15 @@ public class TetrominoFactory implements Cloneable {
                     { { 0, 0, 0, 0 }, { 1, 1, 1, 1 }, { 0, 0, 0, 0 }, { 0, 0, 0, 0 } }, // 0°
                     { { 0, 0, 1, 0 }, { 0, 0, 1, 0 }, { 0, 0, 1, 0 }, { 0, 0, 1, 0 } }, // 90°
                     { { 0, 0, 0, 0 }, { 0, 0, 0, 0 }, { 1, 1, 1, 1 }, { 0, 0, 0, 0 } }, // 180°
-                    { { 0, 1, 0, 0 }, { 0, 1, 0, 0 }, { 0, 1, 0, 0 }, { 0, 1, 0, 0 } } // 270°
+                    { { 0, 1, 0, 0 }, { 0, 1, 0, 0 }, { 0, 1, 0, 0 }, { 0, 1, 0, 0 } }  // 270°
             };
         }
 
         @Override
-        protected Color defineColor() {
-            return new Color(0, 240, 240);
-        } // cyan
+        protected Color defineColor() { return new Color(0, 240, 240); } // cyan
 
         @Override
-        public String getType() {
-            return I_PIECE;
-        }
+        public String getType() { return I_PIECE; }
     }
 
     // ── O-Piece — yellow, 2×2 square (rotation-invariant) ───────────────────
@@ -336,20 +371,32 @@ public class TetrominoFactory implements Cloneable {
 
         @Override
         protected int[][][] defineRotations() {
-            // Symmetric: all 4 rotation states are identical.
-            int[][] shape = { { 0, 1, 1, 0 }, { 0, 1, 1, 0 }, { 0, 0, 0, 0 }, { 0, 0, 0, 0 } };
-            return new int[][][] { shape, shape, shape, shape };
+            // BUG FIX 4 — each rotation state now gets its own distinct array.
+            //
+            // ORIGINAL CODE:
+            //     int[][] shape = { {0,1,1,0}, {0,1,1,0}, {0,0,0,0}, {0,0,0,0} };
+            //     return new int[][][] { shape, shape, shape, shape };
+            //
+            // All four entries pointed to the same int[][] object in memory.
+            // If any code path ever modifies a rotation array in-place (e.g.
+            // a future rotateClockwise() implementation that writes to the
+            // grid directly rather than cycling an index), every rotation
+            // state would be corrupted simultaneously through the shared
+            // reference — a silent, hard-to-diagnose bug.
+            // Four independent literals guarantees each state is isolated.
+            return new int[][][] {
+                    { { 0, 1, 1, 0 }, { 0, 1, 1, 0 }, { 0, 0, 0, 0 }, { 0, 0, 0, 0 } }, // 0°
+                    { { 0, 1, 1, 0 }, { 0, 1, 1, 0 }, { 0, 0, 0, 0 }, { 0, 0, 0, 0 } }, // 90°
+                    { { 0, 1, 1, 0 }, { 0, 1, 1, 0 }, { 0, 0, 0, 0 }, { 0, 0, 0, 0 } }, // 180°
+                    { { 0, 1, 1, 0 }, { 0, 1, 1, 0 }, { 0, 0, 0, 0 }, { 0, 0, 0, 0 } }  // 270°
+            };
         }
 
         @Override
-        protected Color defineColor() {
-            return new Color(240, 240, 0);
-        } // yellow
+        protected Color defineColor() { return new Color(240, 240, 0); } // yellow
 
         @Override
-        public String getType() {
-            return O_PIECE;
-        }
+        public String getType() { return O_PIECE; }
     }
 
     // ── T-Piece — purple, T-shape ─────────────────────────────────────────────
@@ -361,19 +408,15 @@ public class TetrominoFactory implements Cloneable {
                     { { 0, 1, 0, 0 }, { 1, 1, 1, 0 }, { 0, 0, 0, 0 }, { 0, 0, 0, 0 } }, // 0°
                     { { 0, 1, 0, 0 }, { 0, 1, 1, 0 }, { 0, 1, 0, 0 }, { 0, 0, 0, 0 } }, // 90°
                     { { 0, 0, 0, 0 }, { 1, 1, 1, 0 }, { 0, 1, 0, 0 }, { 0, 0, 0, 0 } }, // 180°
-                    { { 0, 1, 0, 0 }, { 1, 1, 0, 0 }, { 0, 1, 0, 0 }, { 0, 0, 0, 0 } } // 270°
+                    { { 0, 1, 0, 0 }, { 1, 1, 0, 0 }, { 0, 1, 0, 0 }, { 0, 0, 0, 0 } }  // 270°
             };
         }
 
         @Override
-        protected Color defineColor() {
-            return new Color(160, 0, 240);
-        } // purple
+        protected Color defineColor() { return new Color(160, 0, 240); } // purple
 
         @Override
-        public String getType() {
-            return T_PIECE;
-        }
+        public String getType() { return T_PIECE; }
     }
 
     // ── S-Piece — green, S-shape ──────────────────────────────────────────────
@@ -385,19 +428,15 @@ public class TetrominoFactory implements Cloneable {
                     { { 0, 1, 1, 0 }, { 1, 1, 0, 0 }, { 0, 0, 0, 0 }, { 0, 0, 0, 0 } }, // 0°
                     { { 0, 1, 0, 0 }, { 0, 1, 1, 0 }, { 0, 0, 1, 0 }, { 0, 0, 0, 0 } }, // 90°
                     { { 0, 0, 0, 0 }, { 0, 1, 1, 0 }, { 1, 1, 0, 0 }, { 0, 0, 0, 0 } }, // 180°
-                    { { 1, 0, 0, 0 }, { 1, 1, 0, 0 }, { 0, 1, 0, 0 }, { 0, 0, 0, 0 } } // 270°
+                    { { 1, 0, 0, 0 }, { 1, 1, 0, 0 }, { 0, 1, 0, 0 }, { 0, 0, 0, 0 } }  // 270°
             };
         }
 
         @Override
-        protected Color defineColor() {
-            return new Color(0, 240, 0);
-        } // green
+        protected Color defineColor() { return new Color(0, 240, 0); } // green
 
         @Override
-        public String getType() {
-            return S_PIECE;
-        }
+        public String getType() { return S_PIECE; }
     }
 
     // ── Z-Piece — red, Z-shape ────────────────────────────────────────────────
@@ -409,19 +448,15 @@ public class TetrominoFactory implements Cloneable {
                     { { 1, 1, 0, 0 }, { 0, 1, 1, 0 }, { 0, 0, 0, 0 }, { 0, 0, 0, 0 } }, // 0°
                     { { 0, 0, 1, 0 }, { 0, 1, 1, 0 }, { 0, 1, 0, 0 }, { 0, 0, 0, 0 } }, // 90°
                     { { 0, 0, 0, 0 }, { 1, 1, 0, 0 }, { 0, 1, 1, 0 }, { 0, 0, 0, 0 } }, // 180°
-                    { { 0, 1, 0, 0 }, { 1, 1, 0, 0 }, { 1, 0, 0, 0 }, { 0, 0, 0, 0 } } // 270°
+                    { { 0, 1, 0, 0 }, { 1, 1, 0, 0 }, { 1, 0, 0, 0 }, { 0, 0, 0, 0 } }  // 270°
             };
         }
 
         @Override
-        protected Color defineColor() {
-            return new Color(240, 0, 0);
-        } // red
+        protected Color defineColor() { return new Color(240, 0, 0); } // red
 
         @Override
-        public String getType() {
-            return Z_PIECE;
-        }
+        public String getType() { return Z_PIECE; }
     }
 
     // ── L-Piece — orange, L-shape ─────────────────────────────────────────────
@@ -433,19 +468,15 @@ public class TetrominoFactory implements Cloneable {
                     { { 1, 0, 0, 0 }, { 1, 0, 0, 0 }, { 1, 1, 0, 0 }, { 0, 0, 0, 0 } }, // 0°
                     { { 0, 0, 0, 0 }, { 1, 1, 1, 0 }, { 1, 0, 0, 0 }, { 0, 0, 0, 0 } }, // 90°
                     { { 1, 1, 0, 0 }, { 0, 1, 0, 0 }, { 0, 1, 0, 0 }, { 0, 0, 0, 0 } }, // 180°
-                    { { 0, 0, 1, 0 }, { 1, 1, 1, 0 }, { 0, 0, 0, 0 }, { 0, 0, 0, 0 } } // 270°
+                    { { 0, 0, 1, 0 }, { 1, 1, 1, 0 }, { 0, 0, 0, 0 }, { 0, 0, 0, 0 } }  // 270°
             };
         }
 
         @Override
-        protected Color defineColor() {
-            return new Color(240, 160, 0);
-        } // orange
+        protected Color defineColor() { return new Color(240, 160, 0); } // orange
 
         @Override
-        public String getType() {
-            return L_PIECE;
-        }
+        public String getType() { return L_PIECE; }
     }
 
     // ── J-Piece — blue, J-shape ───────────────────────────────────────────────
@@ -457,18 +488,14 @@ public class TetrominoFactory implements Cloneable {
                     { { 0, 1, 0, 0 }, { 0, 1, 0, 0 }, { 1, 1, 0, 0 }, { 0, 0, 0, 0 } }, // 0°
                     { { 1, 0, 0, 0 }, { 1, 1, 1, 0 }, { 0, 0, 0, 0 }, { 0, 0, 0, 0 } }, // 90°
                     { { 1, 1, 0, 0 }, { 1, 0, 0, 0 }, { 1, 0, 0, 0 }, { 0, 0, 0, 0 } }, // 180°
-                    { { 0, 0, 0, 0 }, { 1, 1, 1, 0 }, { 0, 0, 1, 0 }, { 0, 0, 0, 0 } } // 270°
+                    { { 0, 0, 0, 0 }, { 1, 1, 1, 0 }, { 0, 0, 1, 0 }, { 0, 0, 0, 0 } }  // 270°
             };
         }
 
         @Override
-        protected Color defineColor() {
-            return new Color(0, 0, 240);
-        } // blue
+        protected Color defineColor() { return new Color(0, 0, 240); } // blue
 
         @Override
-        public String getType() {
-            return J_PIECE;
-        }
+        public String getType() { return J_PIECE; }
     }
 }
