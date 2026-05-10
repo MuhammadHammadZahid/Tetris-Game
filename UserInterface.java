@@ -70,6 +70,19 @@ import javax.swing.*;
  * class mixed in with screen classes. Extracting it to a
  * focused helper makes the contract explicit and testable.
  *
+ * NOTE ON BaseScreen USAGE
+ * ─────────────────────────
+ * BaseScreen's constructor calls buildContent() via setupUI(). Because
+ * Java requires super() as the first statement, subclass instance fields
+ * are NOT yet assigned when buildContent() runs.
+ *
+ * Screens with no fields beyond 'frame' (MainMenuScreen, HighScoreScreen)
+ * safely extend BaseScreen.
+ *
+ * Screens that need additional fields (ModeSelectScreen, DifficultyScreen,
+ * GameOverScreen) inline the same setup in their own constructors so all
+ * fields are assigned before any UI is built.
+ *
  * ═══════════════════════════════════════════════════════════════════
  */
 public class UserInterface {
@@ -79,7 +92,7 @@ public class UserInterface {
     static final Color BORDER   = Color.GRAY;
     static final Color BOARD_BG = Color.LIGHT_GRAY;
 
-    // ── Shared screen dimension (DRY — was copy-pasted in every screen) ───────
+    // ── Shared screen dimension ───────────────────────────────────────────────
     private static Dimension screenSize() {
         return new Dimension(
                 TetrisGame.BOARD_WIDTH + TetrisGame.SIDE_PANEL + TetrisGame.PADDING * 3,
@@ -88,15 +101,7 @@ public class UserInterface {
 
     // ═════════════════════════════════════════════════════════════════════════
     // TEMPLATE METHOD — BaseScreen
-    // ─────────────────────────────
-    // Defines the construction skeleton shared by screens whose fields are
-    // all available before buildContent() is called (i.e. screens that need
-    // no constructor arguments beyond 'frame').
-    //
-    // DifficultyScreen and GameOverScreen opt out of BaseScreen because Java
-    // requires super() as the first statement, meaning buildContent() would
-    // fire before their fields (mode, stats, difficulty) are assigned.
-    // Those two screens inline the same setup directly in their constructors.
+    // Used only by screens that have no instance fields beyond 'frame'.
     // ═════════════════════════════════════════════════════════════════════════
     private static abstract class BaseScreen extends JPanel {
 
@@ -117,7 +122,6 @@ public class UserInterface {
             inner.setLayout(new GridLayout(0, 1, 0, 10));
 
             buildContent(inner);
-
             add(inner);
         }
 
@@ -125,7 +129,7 @@ public class UserInterface {
     }
 
     // ═════════════════════════════════════════════════════════════════════════
-    // MainMenuScreen
+    // MainMenuScreen — extends BaseScreen (no extra fields needed)
     // ═════════════════════════════════════════════════════════════════════════
     public static class MainMenuScreen extends BaseScreen {
 
@@ -165,22 +169,30 @@ public class UserInterface {
 
     // ═════════════════════════════════════════════════════════════════════════
     // ModeSelectScreen
+    // ─────────────────
+    // Does NOT extend BaseScreen because 'modes' is an instance field that
+    // would be null when BaseScreen calls buildContent() during super().
+    // Constructor inlines the setup so 'modes' is assigned first.
     // ═════════════════════════════════════════════════════════════════════════
-    public static class ModeSelectScreen extends BaseScreen {
-
-        private final GameModes.GameMode[] modes = {
-                new GameModes.StandardMode(),
-                new GameModes.FourtyLines(),
-                new GameModes.TimeTrial(),
-                new GameModes.ZenMode()
-        };
+    public static class ModeSelectScreen extends JPanel {
 
         public ModeSelectScreen(TetrisGame.TetrisFrame frame) {
-            super(frame);
-        }
+            // Assign modes before building any UI.
+            GameModes.GameMode[] modes = {
+                    new GameModes.StandardMode(),
+                    new GameModes.FourtyLines(),
+                    new GameModes.TimeTrial(),
+                    new GameModes.ZenMode()
+            };
 
-        @Override
-        protected void buildContent(JPanel inner) {
+            setBackground(BG);
+            setPreferredSize(screenSize());
+            setLayout(new GridBagLayout());
+
+            JPanel inner = new JPanel();
+            inner.setBackground(BG);
+            inner.setLayout(new GridLayout(0, 1, 0, 10));
+
             JLabel heading = new JLabel("Select Mode", SwingConstants.CENTER);
             heading.setFont(new Font(Font.DIALOG, Font.BOLD, 20));
             inner.add(heading);
@@ -222,17 +234,15 @@ public class UserInterface {
             buttons.add(backBtn);
             buttons.add(nextBtn);
             inner.add(buttons);
+
+            add(inner);
         }
     }
 
     // ═════════════════════════════════════════════════════════════════════════
     // DifficultyScreen
     // ─────────────────
-    // Does NOT extend BaseScreen because 'mode' must be assigned before
-    // buildContent() runs. Extending BaseScreen would require super() first,
-    // which calls buildContent() before this.mode is set — leaving the panel
-    // empty. Instead, the setup is inlined in the constructor so field
-    // assignment happens first.
+    // Does NOT extend BaseScreen — 'mode' must be assigned before UI builds.
     // ═════════════════════════════════════════════════════════════════════════
     public static class DifficultyScreen extends JPanel {
 
@@ -270,7 +280,7 @@ public class UserInterface {
     }
 
     // ═════════════════════════════════════════════════════════════════════════
-    // HighScoreScreen
+    // HighScoreScreen — extends BaseScreen (SCORED_MODES is static, not instance)
     // ═════════════════════════════════════════════════════════════════════════
     public static class HighScoreScreen extends BaseScreen {
 
@@ -310,10 +320,8 @@ public class UserInterface {
     // ═════════════════════════════════════════════════════════════════════════
     // GameOverScreen
     // ───────────────
-    // Does NOT extend BaseScreen for the same reason as DifficultyScreen:
-    // 'stats', 'mode', and 'difficulty' must be assigned before the panel
-    // is populated. Inlining setup in the constructor avoids the null-field
-    // problem caused by BaseScreen calling buildContent() from super().
+    // Does NOT extend BaseScreen — 'stats', 'mode', 'difficulty' must be
+    // assigned before UI builds.
     // ═════════════════════════════════════════════════════════════════════════
     public static class GameOverScreen extends JPanel {
 
@@ -339,8 +347,7 @@ public class UserInterface {
                 inner.add(lbl);
             }
 
-            // FACTORY METHOD: mode.createFresh() lets each GameMode clone itself.
-            // No instanceof chain needed — OCP satisfied.
+            // FACTORY METHOD: mode.createFresh() — no instanceof needed (OCP).
             JButton replayBtn = ButtonFactory.create("Play Again");
             replayBtn.addActionListener(e -> {
                 SoundEffects.onMenuClick();
